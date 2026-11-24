@@ -6,8 +6,6 @@ from insurance_underwriting_ui import formatting as fmt
 from insurance_underwriting_ui.api import ApiError, IntakeClient, UnderwritingClient
 from insurance_underwriting_ui.settings import get_settings
 
-PAGES = ("Boîte de réception", "Soumettre un courriel", "Revue humaine")
-
 SAMPLE_BODY = (
     "Hello,\n\n"
     "NorthLake Analytics Inc. is a Montreal-based data consulting firm with\n"
@@ -245,26 +243,71 @@ def page_review(uw: UnderwritingClient) -> None:
         st.rerun()
 
 
+STYLES = """
+<style>
+footer {visibility: hidden;}
+[data-testid="stMetric"] {
+    background: rgba(128, 128, 128, 0.08);
+    border: 1px solid rgba(128, 128, 128, 0.25);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+[data-testid="stMetricLabel"] p {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.7;
+}
+</style>
+"""
+
+
 def sidebar_health(intake: IntakeClient, uw: UnderwritingClient) -> None:
+    st.sidebar.markdown("**Services**")
     for label, client in (("email-intake", intake), ("underwriting-agent", uw)):
-        state = "OK" if client.is_healthy() else "indisponible"
-        st.sidebar.caption(f"● {label} : {state}")
+        dot = ":green[●]" if client.is_healthy() else ":red[●]"
+        st.sidebar.markdown(f"{dot} {label}")
 
 
 def main() -> None:
-    st.set_page_config(page_title="Underwriting console", layout="wide")
+    st.set_page_config(
+        page_title="Underwriting console",
+        page_icon="🛡️",
+        layout="wide",
+    )
+    st.markdown(STYLES, unsafe_allow_html=True)
     intake, uw = get_clients()
-    st.sidebar.title("Underwriting console")
-    page = st.sidebar.radio("Navigation", PAGES)
+
+    pages = [
+        st.Page(
+            lambda: page_inbox(intake, uw),
+            title="Boîte de réception",
+            icon=":material/inbox:",
+            url_path="inbox",
+            default=True,
+        ),
+        st.Page(
+            lambda: page_submit(intake),
+            title="Soumettre un courriel",
+            icon=":material/forward_to_inbox:",
+            url_path="submit",
+        ),
+        st.Page(
+            lambda: page_review(uw),
+            title="Revue humaine",
+            icon=":material/fact_check:",
+            url_path="review",
+        ),
+    ]
+
+    current = st.navigation(pages, position="top")
+    st.caption(
+        "Insurance Agentic Platform · souscription cyber PME · données synthétiques"
+    )
     sidebar_health(intake, uw)
 
     try:
-        if page == PAGES[0]:
-            page_inbox(intake, uw)
-        elif page == PAGES[1]:
-            page_submit(intake)
-        else:
-            page_review(uw)
+        current.run()
     except ApiError as error:
         st.error(f"Erreur du service : {error}")
 

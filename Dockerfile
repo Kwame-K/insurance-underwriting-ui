@@ -30,6 +30,9 @@ RUN useradd --create-home --uid 10001 appuser \
 
 COPY --from=builder --chown=appuser:appuser /app /app
 
+COPY --chown=appuser:appuser .streamlit ./.streamlit
+
+
 USER appuser
 
 EXPOSE 8501
