@@ -3,7 +3,9 @@ from typing import Any
 import streamlit as st
 
 from insurance_underwriting_ui import formatting as fmt
+from insurance_underwriting_ui.agent_workspace import page_agents
 from insurance_underwriting_ui.api import ApiError, IntakeClient, UnderwritingClient
+from insurance_underwriting_ui.live import live_record_picker, render_health
 from insurance_underwriting_ui.settings import get_settings
 
 SAMPLE_BODY = (
@@ -99,20 +101,26 @@ def page_inbox(intake: IntakeClient, uw: UnderwritingClient) -> None:
         results = intake.scan_inbox()
         st.toast(f"{len(results)} fichier(s) examiné(s).")
 
-    records = intake.list_emails()
-    if not records:
-        st.info("Aucun courriel traité. Dépose un .eml dans data/inbox.")
-        return
-
-    rows = fmt.email_rows(records)
-    st.dataframe(
-        [{k: v for k, v in r.items() if k != "source_id"} for r in rows],
-        hide_index=True,
+    live_record_picker(
+        "inbox",
+        intake.list_emails,
+        lambda item: str(item["email"]["source_id"]),
+        lambda item: (
+            f"{item['email'].get('subject') or '(sans objet)'}"
+            f" — {item['workflow_status']}"
+        ),
+        "Aucun courriel traité. Dépose un fichier .eml dans data/inbox.",
     )
 
-    labels = {r["source_id"]: f"{r['Sujet']} — {r['Statut']}" for r in rows}
-    selected = st.selectbox("Courriel", list(labels), format_func=lambda s: labels[s])
-    record = next(r for r in records if r["email"]["source_id"] == selected)
+    record = st.session_state.get("inbox_opened")
+    if record is None:
+        st.caption(
+            "Choisis un courriel, puis clique sur « Ouvrir / recharger le dossier »."
+        )
+        return
+
+    selected = str(record["email"]["source_id"])
+
     response = record.get("response") or {}
     email = record["email"]
 
@@ -169,6 +177,7 @@ def render_completion(
             return
         with st.spinner("Analyse en cours (10 à 20 s)..."):
             result = intake.complete(source_id, overrides)
+            st.session_state.pop("inbox_opened", None)
         flash(
             f"Dossier relancé : {result.get('workflow_status')} / "
             f"{result.get('decision') or '—'}"
@@ -201,16 +210,21 @@ def page_submit(intake: IntakeClient) -> None:
 def page_review(uw: UnderwritingClient) -> None:
     st.header("Revue humaine")
     show_flash()
-    pending = uw.list_pending_reviews()
-    if not pending:
-        st.info("Aucune décision en attente de revue.")
+    live_record_picker(
+        "review",
+        uw.list_pending_reviews,
+        lambda item: str(item["decision_id"]),
+        lambda item: f"{item['decision_id']} — {item['decision']}",
+        "Aucune décision en attente de revue.",
+    )
+
+    decision = st.session_state.get("review_opened")
+    if decision is None:
+        st.caption("Choisis une décision, puis ouvre le dossier pour la revoir.")
         return
 
-    labels = {
-        d["decision_id"]: f"{d['decision_id']} — {d['decision']}" for d in pending
-    }
-    selected = st.selectbox("Décision", list(labels), format_func=lambda s: labels[s])
-    decision = next(d for d in pending if d["decision_id"] == selected)
+    selected = str(decision["decision_id"])
+
     render_decision(decision, selected, uw)
 
     st.subheader("Décision du souscripteur")
@@ -238,7 +252,17 @@ def page_review(uw: UnderwritingClient) -> None:
         except ValueError as error:
             st.error(str(error))
             return
+        pending_ids = {str(item["decision_id"]) for item in uw.list_pending_reviews()}
+        if selected not in pending_ids:
+            st.warning(
+                "Cette décision n’est plus en attente de revue. "
+                "Actualise la liste avant de continuer."
+            )
+            return
+
         result = uw.review(selected, command)
+        st.session_state.pop("review_opened", None)
+
         flash(f"Revue enregistrée : {result.get('review_status')}")
         st.rerun()
 
@@ -262,17 +286,10 @@ footer {visibility: hidden;}
 """
 
 
-def sidebar_health(intake: IntakeClient, uw: UnderwritingClient) -> None:
-    st.sidebar.markdown("**Services**")
-    for label, client in (("email-intake", intake), ("underwriting-agent", uw)):
-        dot = ":green[●]" if client.is_healthy() else ":red[●]"
-        st.sidebar.markdown(f"{dot} {label}")
-
-
 def main() -> None:
     st.set_page_config(
         page_title="Underwriting console",
-        page_icon="🛡️",
+        page_icon="",
         layout="wide",
     )
     st.markdown(STYLES, unsafe_allow_html=True)
@@ -298,13 +315,20 @@ def main() -> None:
             icon=":material/fact_check:",
             url_path="review",
         ),
+        st.Page(
+            page_agents,
+            title="Interroger les agents",
+            icon=":material/forum:",
+            url_path="agents",
+        ),
     ]
 
     current = st.navigation(pages, position="top")
     st.caption(
         "Insurance Agentic Platform · souscription cyber PME · données synthétiques"
     )
-    sidebar_health(intake, uw)
+    with st.sidebar:
+        render_health()
 
     try:
         current.run()

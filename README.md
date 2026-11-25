@@ -11,8 +11,24 @@ Streamlit console for the [Insurance Agentic Platform](https://github.com/Kwame-
 | Inbox and decision detail | Inspect stored email intake results and related underwriting decision details. |
 | Email submission | Paste email text or submit an `.eml` file. |
 | Human review queue | Access underwriting decisions awaiting review. |
+| Ask the agents | Ask portfolio questions, plot supported Analyst results, and query the Knowledge Agent in cited-answer or source-passage mode. |
+
 
 The UI does not process PDF attachments. It sends email input to Email Intake, whose v1 contract processes text only.
+
+## Live monitoring and agent workspace
+
+- The sidebar refreshes service status every 10 seconds for Email Intake,
+  Submission Extractor, Underwriting, Data Analyst, and the Knowledge Agent.
+  `Healthy` means the API responds to `/health`; it does not prove that the
+  Analyst dataset or RAG index is ready.
+- The inbox and human-review lists refresh every 15 seconds. The open record
+  and its form are not replaced automatically.
+- Data Analyst questions use `POST /v1/analyze`. Supported charts are rendered
+  from the returned data; the result table remains available.
+- The RAG tab offers cited answers (`POST /v1/ask`) and source passages
+  (`POST /v1/retrieve-evidence`). The cited-answer mode may cite fewer passages
+  than retrieval returns. Switching modes does not rerun previous questions.
 
 ## Architecture
 
@@ -64,6 +80,10 @@ uv run streamlit run src/insurance_underwriting_ui/app.py --server.port 8502
 | `INTAKE_BASE_URL` | `http://127.0.0.1:8004` | `http://email-intake:8004` |
 | `UNDERWRITING_BASE_URL` | `http://127.0.0.1:8002` | `http://underwriting-agent:8002` |
 | `REQUEST_TIMEOUT_SECONDS` | `120` | Set from `UI_REQUEST_TIMEOUT_SECONDS`; defaults to `120` in Compose. |
+| `SUBMISSION_EXTRACTOR_BASE_URL` | `http://127.0.0.1:8000` | `http://submission-extractor:8000` |
+| `DATA_ANALYST_BASE_URL` | `http://127.0.0.1:8003` | `http://data-analyst-agent:8003` |
+| `KNOWLEDGE_AGENT_BASE_URL` | `http://127.0.0.1:8001` | `http://knowledge-agent:8001` |
+
 
 Use host addresses when Streamlit runs on your machine and Compose service names when it runs in the platform container. These are URLs for the Streamlit process to reach, not URLs that the browser needs to resolve directly.
 
